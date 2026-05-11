@@ -1,0 +1,22 @@
+services:
+  triton:
+    image: nvcr.io/nvidia/tritonserver:25.03-py3
+    runtime: nvidia
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+      - "8002:8002"
+    volumes:
+      - ./triton_repo:/models
+    command: tritonserver --model-repository=/models --model-control-mode=poll
+
+  tutor-app:
+    build: .
+    image: sign-tutor:latest
+    runtime: nvidia
+    ports:
+      - "7860:7860"
+    devices:
+      - /dev/video0:/dev/video0
+    depends_on:
+      - triton

@@ -1,0 +1,10 @@
+name: "British Sign Language"
+code: "bsl"
+input_hands: 2
+classes: ["A","B","C","D","E","F","G","H","I","J","K","L","M",
+          "N","O","P","Q","R","S","T","U","V","W","X","Y","Z"]
+triton_model_name: "bsl_classifier"
+references_dir: "references"
+notes:
+  two_handed: true
+  attribution: "Reference images: TBC"
