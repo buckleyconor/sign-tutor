@@ -1,5 +1,5 @@
 amber_min_confidence: 0.50
-green_min_confidence: 0.80
+green_min_confidence: 0.90
 hold_seconds_for_complete: 1.0
 smoothing_window_frames: 15
 

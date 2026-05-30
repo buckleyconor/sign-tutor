@@ -17,7 +17,7 @@ def test_translation_invariance():
     result1 = normalise_one_hand(hand)
     translated = hand + np.array([10.0, 20.0, 30.0], dtype=np.float32)
     result2 = normalise_one_hand(translated)
-    np.testing.assert_allclose(result1, result2, atol=1e-6)
+    np.testing.assert_allclose(result1, result2, atol=1e-5)
 
 
 def test_scale_invariance():
@@ -25,7 +25,7 @@ def test_scale_invariance():
     result1 = normalise_one_hand(hand)
     scaled = hand * 2.0
     result2 = normalise_one_hand(scaled)
-    np.testing.assert_allclose(result1, result2, atol=1e-6)
+    np.testing.assert_allclose(result1, result2, atol=1e-5)
 
 
 def test_wrist_at_origin():

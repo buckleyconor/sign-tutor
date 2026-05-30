@@ -2,7 +2,6 @@
 from pathlib import Path
 from typing import Optional
 
-import cv2
 import numpy as np
 import yaml
 
@@ -11,7 +10,7 @@ from src.capture.hands import HandTracker
 from src.features import build_feature_vector
 from src.inference.triton_client import TritonClassifier
 from src.lesson.smoother import PredictionSmoother
-from src.lesson.scorer import Light, TrafficLightScorer
+from src.lesson.scorer import QualityScorer
 
 
 def load_thresholds(path: str = "configs/thresholds.yaml",
@@ -31,7 +30,7 @@ class LessonController:
         self._tracker = HandTracker()
         self._classifier: Optional[TritonClassifier] = None
         self._smoother: Optional[PredictionSmoother] = None
-        self._scorer: Optional[TrafficLightScorer] = None
+        self._scorer: Optional[QualityScorer] = None
         self._target_idx: int = 0
         self._thresholds = {}
 
@@ -47,40 +46,32 @@ class LessonController:
 
     def set_target(self, idx: int):
         self._target_idx = idx
-        self._scorer = TrafficLightScorer(
+        self._scorer = QualityScorer(
             target_idx=idx,
             hold_seconds=self._thresholds.get("hold_seconds_for_complete", 1.0),
-            amber_min=self._thresholds.get("amber_min_confidence", 0.50),
-            green_min=self._thresholds.get("green_min_confidence", 0.80),
+            green_min=self._thresholds.get("green_min_confidence", 0.90),
         )
         self._smoother = PredictionSmoother(
             window=self._thresholds.get("smoothing_window_frames", 15)
         )
 
-    def process_frame(self, bgr_frame: np.ndarray, lang_code: str) -> dict:
-        """Process a single webcam frame. Returns a dict of UI updates."""
+    def process_frame(self, rgb_frame: np.ndarray, lang_code: str) -> dict:
+        """Process a single webcam frame (RGB, as provided by Gradio streaming).
+        Returns a dict of UI updates."""
         lang = self._registry.get(lang_code)
         if not lang or self._classifier is None:
-            return {"annotated": bgr_frame, "status": "Select a language"}
+            return {"annotated": rgb_frame, "status": "Select a language"}
 
-        # Track hands
-        rgb = cv2.cvtColor(bgr_frame, cv2.COLOR_BGR2RGB)
-        detections = self._tracker.process(rgb)
+        # Flip horizontally so hand orientation matches training images
+        # (webcam sends non-mirrored frames; Kaggle dataset was photographed mirrored)
+        flipped = np.ascontiguousarray(rgb_frame[:, ::-1, :])
+        detections = self._tracker.process(flipped)
 
-        # Build feature vector
         feat = build_feature_vector(lang, detections)
-
-        # Draw landmarks on frame
-        annotated = self._draw_landmarks(bgr_frame, detections)
 
         if feat is None:
             hint = "Show your hand" if lang.input_hands == 1 else "Show both hands"
-            return {
-                "annotated": annotated,
-                "status": hint,
-                "light": Light.RED,
-                "completed": False,
-            }
+            return {"status": hint, "completed": False}
 
         # Infer
         logits = self._classifier.infer(feat)
@@ -93,36 +84,22 @@ class LessonController:
         smoothed = self._smoother.smoothed()
 
         if smoothed is None:
-            return {
-                "annotated": annotated,
-                "status": "Collecting data...",
-                "light": Light.RED,
-                "completed": False,
-            }
+            return {"status": "Collecting data...", "completed": False}
 
         smooth_idx, smooth_conf = smoothed
 
         # Score
-        light, completed = self._scorer.evaluate(smooth_idx, smooth_conf)
+        self._scorer.update(smooth_idx, smooth_conf)
         predicted_letter = lang.classes[smooth_idx]
         target_letter = lang.classes[self._target_idx]
 
         return {
-            "annotated": annotated,
-            "status": f"Predicted: {predicted_letter} ({smooth_conf:.0%}) | Target: {target_letter}",
-            "light": light,
-            "completed": completed,
-            "confidence": smooth_conf,
+            "status": (
+                f"Predicted: **{predicted_letter}** ({smooth_conf:.0%}) | "
+                f"Target: **{target_letter}**"
+            ),
+            "completed": self._scorer.completed,
         }
-
-    def _draw_landmarks(self, frame: np.ndarray, detections) -> np.ndarray:
-        for handedness, landmarks in detections:
-            for lm in landmarks:
-                x, y, _ = (int(lm[0] * frame.shape[1]),
-                           int(lm[1] * frame.shape[0]),
-                           lm[2])
-                cv2.circle(frame, (x, y), 4, (0, 255, 0), -1)
-        return frame
 
     def get_reference_image(self, lang_code: str, idx: int) -> Optional[str]:
         lang = self._registry.get(lang_code)

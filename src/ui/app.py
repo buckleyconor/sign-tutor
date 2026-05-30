@@ -5,6 +5,33 @@ from src.lesson.controller import LessonController
 
 LANGS = load_registry()
 
+_BAR_SHELL = """
+<div style="background:#e0e0e0;border-radius:8px;height:36px;
+            position:relative;overflow:hidden;margin:4px 0;">
+  <div id="qbar-fill"
+       style="width:0%;height:100%;background:hsl(0,80%,42%);
+              transition:width 0.25s ease,background 0.25s ease;"></div>
+  <span id="qbar-label"
+        style="position:absolute;inset:0;display:flex;align-items:center;
+               justify-content:center;font-weight:bold;font-size:15px;color:#111;">
+    0%
+  </span>
+</div>
+"""
+
+_BAR_JS = """(pct) => {
+    const fill  = document.getElementById('qbar-fill');
+    const label = document.getElementById('qbar-label');
+    if (!fill || !label) return pct;
+    const p = parseFloat(pct) || 0;
+    const display = Math.min(p / 0.9, 1.0);
+    const hue = Math.round(display * 120);
+    fill.style.width      = Math.round(display * 100) + '%';
+    fill.style.background = 'hsl(' + hue + ',80%,42%)';
+    label.textContent     = Math.round(p * 100) + '%';
+    return pct;
+}"""
+
 
 def build_app():
     controller = LessonController(LANGS)
@@ -30,44 +57,61 @@ def build_app():
             letter_display = gr.Textbox(label="Current letter", interactive=False)
             progress_dots = gr.HTML(value="●○○○○○○○○○○", label="Progress")
 
+        gr.Markdown("**Click the Record button (⏺) on the webcam below to start signing.**")
+
         with gr.Row():
             with gr.Column(scale=1):
                 cam = gr.Image(
                     sources=["webcam"],
                     streaming=True,
-                    label="Live feed",
+                    label="Live feed — press ⏺ to start",
                 )
             with gr.Column(scale=1):
                 target = gr.Image(
                     label="Sign this letter",
                     interactive=False,
                 )
-                light = gr.HTML(value="", label="Score")
+                # Static bar shell — rendered once, never replaced
+                gr.HTML(value=_BAR_SHELL, label="Quality")
+                # Hidden number carries the value; JS updates the bar in-place
+                quality_val = gr.Number(value=0.0, visible=False)
                 status = gr.Markdown()
                 with gr.Row():
                     skip_btn = gr.Button("Skip")
-                    next_btn = gr.Button("Next letter")
+                    next_btn = gr.Button("Next letter", interactive=False, variant="primary")
 
-        # State tracking (Gradio doesn't have built-in state in streaming)
-        # We use gr.State for the current letter index
         letter_idx = gr.State(0)
+        passed = gr.State(False)  # latches True once the letter is passed
 
-        def on_frame(frame, lang_code, idx):
+        def on_frame(frame, lang_code, idx, already_passed):
             if frame is None:
-                return frame, "", "", idx
-            result = controller.process_frame(frame, lang_code)
-            light_html = controller._scorer.render_light(result["light"]) if controller._scorer else ""
-            return (
-                result["annotated"],
-                light_html,
-                result["status"],
-                idx,
-            )
+                return 0.0, gr.update(), "", idx, already_passed
+            try:
+                result = controller.process_frame(frame, lang_code)
+                quality = controller._scorer.quality if controller._scorer else 0.0
+                completed = already_passed or result.get("completed", False)
+                status_text = (
+                    "✅ **PASSED!** Proceed to the next letter."
+                    if completed
+                    else result.get("status", "")
+                )
+                return quality, gr.update(interactive=completed), status_text, idx, completed
+            except Exception as e:
+                return 0.0, gr.update(), f"Error: {e}", idx, already_passed
 
         cam.stream(
-            lambda frame, lang_code, idx: on_frame(frame, lang_code, idx),
-            inputs=[cam, lang, letter_idx],
-            outputs=[cam, light, status, letter_idx],
+            on_frame,
+            inputs=[cam, lang, letter_idx, passed],
+            outputs=[quality_val, next_btn, status, letter_idx, passed],
+            stream_every=0.2,
+        )
+
+        # JS-only handler: updates bar DOM directly — no HTML replacement, no flicker
+        quality_val.change(
+            fn=None,
+            inputs=[quality_val],
+            outputs=[quality_val],
+            js=_BAR_JS,
         )
 
         def on_switch_language(lang_code, idx):
@@ -88,28 +132,31 @@ def build_app():
         )
 
         def on_next(idx, lang_code):
-            lang = controller._registry[lang_code]
-            new_idx = (idx + 1) % len(lang.classes)
+            lang_obj = controller._registry[lang_code]
+            new_idx = (idx + 1) % len(lang_obj.classes)
             controller.set_target(new_idx)
-            letter = lang.classes[new_idx]
+            letter = lang_obj.classes[new_idx]
             ref = controller.get_reference_image(lang_code, new_idx)
-            total = len(lang.classes)
+            total = len(lang_obj.classes)
             dots = "●" * (new_idx + 1) + "○" * (total - new_idx - 1)
-            return new_idx, letter, ref, dots
+            return new_idx, letter, ref, dots, gr.update(interactive=False), False
 
         next_btn.click(
             on_next,
             inputs=[letter_idx, lang],
-            outputs=[letter_idx, letter_display, target, progress_dots],
+            outputs=[letter_idx, letter_display, target, progress_dots, next_btn, passed],
         )
 
-        def on_skip(idx, lang_code):
-            return on_next(idx, lang_code)
-
         skip_btn.click(
-            on_skip,
+            on_next,
             inputs=[letter_idx, lang],
-            outputs=[letter_idx, letter_display, target, progress_dots],
+            outputs=[letter_idx, letter_display, target, progress_dots, next_btn, passed],
+        )
+
+        demo.load(
+            on_switch_language,
+            inputs=[lang, letter_idx],
+            outputs=[letter_display, target, progress_dots],
         )
 
     return demo
