@@ -1,6 +1,7 @@
 FROM nvcr.io/nvidia/pytorch:25.03-py3
 
-RUN pip install --no-cache-dir \
+RUN pip install --no-cache-dir --upgrade \
+    'protobuf>=4.25.3,<5' \
     mediapipe \
     opencv-python-headless \
     gradio \
