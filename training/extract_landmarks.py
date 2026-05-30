@@ -6,6 +6,13 @@ from src.capture.hands import HandTracker
 from src.features.normalise import normalise_one_hand
 from src.features.two_hand import build_two_hand_vector
 
+IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png")
+
+def iter_images(directory: Path):
+    """Yield image files matching common extensions."""
+    for ext in IMAGE_EXTENSIONS:
+        yield from directory.glob(f"*{ext}")
+
 
 def extract_from_image_dir(src_dir: Path, hands: int, source_tag: str,
                            out_csv: Path):
@@ -17,7 +24,10 @@ def extract_from_image_dir(src_dir: Path, hands: int, source_tag: str,
             if not letter_dir.is_dir():
                 continue
             letter = letter_dir.name.upper()
-            for img_path in letter_dir.glob("*.[jp][pn]g"):
+            # Only process A-Z directories (skip digits, hidden dirs, etc.)
+            if len(letter) != 1 or not letter.isalpha():
+                continue
+            for img_path in iter_images(letter_dir):
                 img = cv2.imread(str(img_path))
                 if img is None:
                     skipped += 1
