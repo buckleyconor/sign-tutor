@@ -1,7 +1,7 @@
 # Progress Log — Sign Language Tutor
 
 > **Last updated:** 2026-05-11  
-> **Status:** Scaffolded — all core modules implemented and unit-tested  
+> **Status:** Data acquisition starting — Kaggle API configured, ASL dataset next  
 > **Environment:** macOS dev machine (tests run locally), GB10 container pending deployment
 
 ---
@@ -115,7 +115,8 @@ Model weights (`model.plan`) are not yet built — this happens on the GB10 afte
 | Item | Spec Reference | Blocking On |
 |------|----------------|-------------|
 | SSH into GB10 (`promaxgb10`) and verify CUDA/container access | Spec 2, §1 | — |
-| Download ASL Kaggle dataset | Spec 4, §2 | Kaggle credentials / API key |
+| Download ASL Kaggle dataset | Spec 4, §2 | ✅ Kaggle API key ready | Dataset pending download |
+| Download Rasband test set (held-out validation) | Spec 4, §3.3 | — | Dataset pending download |
 | Clone DCU ISL-HS dataset | Spec 4, §3 | — |
 | Run `extract_landmarks.py` on ASL dataset | Spec 2, §3 | Dataset available |
 | Run `train_classifier.py` on ASL landmarks CSV | Spec 2, §5 | Extracted CSV, GPU container |
