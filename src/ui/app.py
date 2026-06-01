@@ -11,6 +11,8 @@ _BAR_SHELL = """
   <div id="qbar-fill"
        style="width:0%;height:100%;background:hsl(0,80%,42%);
               transition:width 0.25s ease,background 0.25s ease;"></div>
+  <div style="position:absolute;left:90%;top:0;width:3px;height:100%;
+              background:rgba(0,0,0,0.35);"></div>
   <span id="qbar-label"
         style="position:absolute;inset:0;display:flex;align-items:center;
                justify-content:center;font-weight:bold;font-size:15px;color:#111;">
@@ -25,10 +27,13 @@ _BAR_JS = """(pct) => {
     if (!fill || !label) return pct;
     const p = parseFloat(pct) || 0;
     const display = Math.min(p / 0.9, 1.0);
-    const hue = Math.round(display * 120);
+    let hue;
+    if (display <= 0.4)       hue = 0;
+    else if (display <= 0.7)  hue = Math.round((display - 0.4) / 0.3 * 30);
+    else                      hue = Math.round(30 + (display - 0.7) / 0.3 * 90);
     fill.style.width      = Math.round(display * 100) + '%';
     fill.style.background = 'hsl(' + hue + ',80%,42%)';
-    label.textContent     = Math.round(p * 100) + '%';
+    label.textContent     = Math.round(display * 100) + '%';
     return pct;
 }"""
 

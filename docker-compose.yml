@@ -16,5 +16,8 @@ services:
     runtime: nvidia
     ports:
       - "7860:7860"
+    volumes:
+      - ./languages:/app/languages
+      - ./src:/app/src
     depends_on:
       - triton
