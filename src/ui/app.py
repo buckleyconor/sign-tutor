@@ -21,20 +21,30 @@ _BAR_SHELL = """
 </div>
 """
 
-_BAR_JS = """(pct) => {
+_STATUS_SHELL = """
+<div id="status-box"
+     style="font-size:26px;font-weight:bold;text-align:center;
+            padding:12px 0;min-height:48px;">
+  &nbsp;
+</div>
+"""
+
+_STATUS_JS = """(txt) => {
+    const el = document.getElementById('status-box');
+    if (el) el.innerHTML = txt || '&nbsp;';
+    return txt;
+}"""
+
+_BAR_JS = """(conf) => {
     const fill  = document.getElementById('qbar-fill');
     const label = document.getElementById('qbar-label');
-    if (!fill || !label) return pct;
-    const p = parseFloat(pct) || 0;
-    const display = Math.min(p / 0.9, 1.0);
-    let hue;
-    if (display <= 0.4)       hue = 0;
-    else if (display <= 0.7)  hue = Math.round((display - 0.4) / 0.3 * 30);
-    else                      hue = Math.round(30 + (display - 0.7) / 0.3 * 90);
-    fill.style.width      = Math.round(display * 100) + '%';
+    if (!fill || !label) return conf;
+    const p = parseFloat(conf) || 0;
+    const hue = Math.round(p * 120);               // 0=red → 120=green
+    fill.style.width      = Math.round(p * 100) + '%';
     fill.style.background = 'hsl(' + hue + ',80%,42%)';
-    label.textContent     = Math.round(display * 100) + '%';
-    return pct;
+    label.textContent     = Math.round(p * 100) + '%';
+    return conf;
 }"""
 
 
@@ -80,7 +90,9 @@ def build_app():
                 gr.HTML(value=_BAR_SHELL, label="Quality")
                 # Hidden number carries the value; JS updates the bar in-place
                 quality_val = gr.Number(value=0.0, visible=False)
-                status = gr.Markdown()
+                # Static status shell — JS updates text in-place, no flicker
+                gr.HTML(value=_STATUS_SHELL)
+                status = gr.Textbox(value="", visible=False)
                 with gr.Row():
                     skip_btn = gr.Button("Skip")
                     next_btn = gr.Button("Next letter", interactive=False, variant="primary")
@@ -93,12 +105,12 @@ def build_app():
                 return 0.0, gr.update(), "", idx, already_passed
             try:
                 result = controller.process_frame(frame, lang_code)
-                quality = controller._scorer.quality if controller._scorer else 0.0
+                quality = result.get("confidence", 0.0)
                 completed = already_passed or result.get("completed", False)
                 status_text = (
-                    "✅ **PASSED!** Proceed to the next letter."
+                    "✅ PASSED! Proceed to the next letter."
                     if completed
-                    else result.get("status", "")
+                    else result.get("status", "").replace("**", "")
                 )
                 return quality, gr.update(interactive=completed), status_text, idx, completed
             except Exception as e:
@@ -111,12 +123,18 @@ def build_app():
             stream_every=0.2,
         )
 
-        # JS-only handler: updates bar DOM directly — no HTML replacement, no flicker
+        # JS-only handlers: update DOM directly — no HTML replacement, no flicker
         quality_val.change(
             fn=None,
             inputs=[quality_val],
             outputs=[quality_val],
             js=_BAR_JS,
+        )
+        status.change(
+            fn=None,
+            inputs=[status],
+            outputs=[status],
+            js=_STATUS_JS,
         )
 
         def on_switch_language(lang_code, idx):
@@ -144,18 +162,18 @@ def build_app():
             ref = controller.get_reference_image(lang_code, new_idx)
             total = len(lang_obj.classes)
             dots = "●" * (new_idx + 1) + "○" * (total - new_idx - 1)
-            return new_idx, letter, ref, dots, gr.update(interactive=False), False
+            return new_idx, letter, ref, dots, gr.update(interactive=False), False, ""
 
         next_btn.click(
             on_next,
             inputs=[letter_idx, lang],
-            outputs=[letter_idx, letter_display, target, progress_dots, next_btn, passed],
+            outputs=[letter_idx, letter_display, target, progress_dots, next_btn, passed, status],
         )
 
         skip_btn.click(
             on_next,
             inputs=[letter_idx, lang],
-            outputs=[letter_idx, letter_display, target, progress_dots, next_btn, passed],
+            outputs=[letter_idx, letter_display, target, progress_dots, next_btn, passed, status],
         )
 
         demo.load(

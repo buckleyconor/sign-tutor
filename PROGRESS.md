@@ -25,7 +25,6 @@
 | `src/registry.py` | `Language` dataclass + `load_registry()` — reads `languages/*/config.yaml` | ✅ |
 | `languages/asl/config.yaml` | One-handed, 26 classes, `asl_classifier`, notes: dynamic letters J, Z | ✅ |
 | `languages/isl/config.yaml` | One-handed, 26 classes, `isl_classifier`, notes: dynamic letters J, X, Z | ✅ |
-| `languages/bsl/config.yaml` | Two-handed, 26 classes, `bsl_classifier`, notes: two_handed=true | ✅ |
 
 Registry supports arbitrary language additions via new `config.yaml` + Triton model — no code changes required.
 
@@ -39,9 +38,8 @@ Registry supports arbitrary language additions via new `config.yaml` + Triton mo
 
 | File | Purpose | Status |
 |------|---------|--------|
-| `src/features/__init__.py` | `build_feature_vector(language, detections)` — dispatches to one-hand or two-hand builder based on `language.input_hands` | ✅ |
+| `src/features/__init__.py` | `build_feature_vector(language, detections)` — normalises and returns (63,) feature vector | ✅ |
 | `src/features/normalise.py` | `normalise_one_hand()` — translate-to-wrist, scale-to-middle-MCP, flatten to `(63,)` | ✅ |
-| `src/features/two_hand.py` | `build_two_hand_vector()` — concatenates dominant + subordinate sub-vectors into `(126,)` | ✅ |
 
 **Normalisation guarantees:**
 - Translation invariant (wrist always at origin)
@@ -55,7 +53,6 @@ Registry supports arbitrary language additions via new `config.yaml` + Triton mo
 | `src/inference/triton_client.py` | `TritonClassifier` — Triton HTTP client wrapper; `infer(x)` returns raw logits | ✅ |
 | `triton_repo/asl_classifier/config.pbtxt` | TensorRT plan, input `(63,)`, output `(26,)`, GPU | ✅ |
 | `triton_repo/isl_classifier/config.pbtxt` | TensorRT plan, input `(63,)`, output `(26,)`, GPU | ✅ |
-| `triton_repo/bsl_classifier/config.pbtxt` | TensorRT plan, input `(126,)`, output `(26,)`, GPU | ✅ |
 
 ### 6. Lesson Logic
 
@@ -77,7 +74,6 @@ Registry supports arbitrary language additions via new `config.yaml` + Triton mo
 |------|---------|--------|
 | `training/extract_landmarks.py` | Extract landmarks from image directories (Kaggle-style `letter/*.png` structure) → CSV with `label, source, frame_id, features` | ✅ |
 | `training/model_one_hand.py` | `OneHandClassifier` — Linear(63,128) → ReLU → Dropout(0.3) → Linear(128,64) → ReLU → Linear(64,C) | ✅ |
-| `training/model_two_hand.py` | `TwoHandClassifier` — Linear(126,256) → ReLU → Dropout(0.3) → Linear(256,128) → ReLU → Dropout(0.2) → Linear(128,C) | ✅ |
 | `training/augment.py` | `augment_one_hand()` — Gaussian noise, in-plane rotation (±10°), 50% mirror flip | ✅ |
 | `training/train_classifier.py` | Full training loop: CSV loading, random split, augmentation, AdamW + cosine annealing, best-by-val-accuracy checkpointing, per-epoch CSV logging | ✅ |
 | `training/export_onnx.py` | Convert PyTorch checkpoint → ONNX with dynamic batch axis | ✅ |
@@ -89,10 +85,9 @@ Registry supports arbitrary language additions via new `config.yaml` + Triton mo
 
 | File | Tests | Coverage |
 |------|-------|----------|
-| `tests/unit/test_registry.py` | Loads 3 languages, one/two-handed flags, 26-letter classes, empty dir handling | ✅ 5 assertions |
+| `tests/unit/test_registry.py` | Loads 2 languages, one-handed flags, 26-letter classes, empty dir handling | ✅ 4 assertions |
 | `tests/unit/test_normalise.py` | Output shape, translation invariance, scale invariance, wrist at origin, zero-scale safety | ✅ 5 assertions |
-| `tests/unit/test_two_hand.py` | Requires both hands, output shape (126,), dominant hand ordering | ✅ 3 assertions |
-| `tests/unit/test_feature_dispatcher.py` | One-handed no detections, one-handed single detection, two-handed both/missing, unsupported input_hands raises ValueError | ✅ 5 assertions |
+| `tests/unit/test_feature_dispatcher.py` | One-handed no detections, one-handed single detection, unsupported input_hands raises ValueError | ✅ 3 assertions |
 | `tests/unit/test_smoother.py` | Warmup period returns None, modal class wins, confidence averages modal only, window eviction | ✅ 4 assertions |
 | `tests/unit/test_scorer.py` | Wrong class = RED, low confidence = RED, mid confidence = AMBER, high confidence = GREEN, completion after hold time, amber resets green timer, HTML rendering | ✅ 7 assertions |
 
@@ -102,9 +97,8 @@ Registry supports arbitrary language additions via new `config.yaml` + Triton mo
 
 | Directory | Model | Input | Output | Platform |
 |-----------|-------|-------|--------|----------|
-| `triton_repo/asl_classifier/1/` | `config.pbtxt` | `(63,)` | `(26,)` | `tensorrt_plan` |
-| `triton_repo/isl_classifier/1/` | `config.pbtxt` | `(63,)` | `(26,)` | `tensorrt_plan` |
-| `triton_repo/bsl_classifier/1/` | `config.pbtxt` | `(126,)` | `(26,)` | `tensorrt_plan` |
+| `triton_repo/asl_classifier/1/` | `config.pbtxt` | `(63,)` | `(26,)` | `onnxruntime_onnx` |
+| `triton_repo/isl_classifier/1/` | `config.pbtxt` | `(63,)` | `(26,)` | `onnxruntime_onnx` |
 
 Model weights (`model.plan`) are not yet built — this happens on the GB10 after training.
 
@@ -124,7 +118,6 @@ Model weights (`model.plan`) are not yet built — this happens on the GB10 afte
 | Triton smoke test (send inference request) | Spec 3, §2 | Engine deployed |
 | Gradio end-to-end demo (webcam → recognition) | Spec 3, §3 | Triton running |
 | ISL self-capture via `training/capture.py` | Spec 4, §4 | Webcam, trained ISL model |
-| BSL two-hand data collection | Spec 4, §4 | Webcam, trained BSL model |
 | Integration tests (real Triton, real webcam frame) | Spec 3, §2 | GB10 environment |
 
 ---
@@ -134,13 +127,9 @@ Model weights (`model.plan`) are not yet built — this happens on the GB10 afte
 ```
 ┌──────────────┐     ┌──────────────────┐     ┌─────────────────┐
 │   Webcam     │────▶│  HandTracker     │────▶│ Feature Extractor│
-│  (OpenCV)    │     │  (MediaPipe)     │     │ (normalise /     │
-└──────────────┘     │  returns 21×3 pts│     │  two_hand concat)│
-                     └──────────────────┘     │ outputs (63) or   │
-                     ┌──────────────────┘     │   (126) vector    │
-                     ▼                        └────────┬──────────┘
-              Annotated frame                     │
-              (landmark overlay)                  ▼
+│  (OpenCV)    │     │  (MediaPipe)     │     │ (normalise)      │
+└──────────────┘     │  returns 21×3 pts│     │ outputs (63)      │
+                     └──────────────────┘                     ▼
                                    ┌─────────────────────────┐
                                    │  Triton Inference Server │
                                    │  (TensorRT plan, GPU)    │

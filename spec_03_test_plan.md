@@ -25,10 +25,9 @@ Framework: `pytest` with `pytest-cov`. Target coverage: 80%+ on `src/` excluding
 
 | Test | Assertion |
 |---|---|
-| `test_loads_three_languages` | Given fixture languages dir, registry contains keys `'asl'`, `'isl'`, `'bsl'`. |
+| `test_loads_two_languages` | Given fixture languages dir, registry contains keys `'asl'`, `'isl'`. |
 | `test_asl_isl_one_handed` | `registry['asl'].input_hands == 1`; same for isl. |
-| `test_bsl_two_handed` | `registry['bsl'].input_hands == 2`. |
-| `test_classes_have_26_letters` | All three languages have `len(classes) == 26` with A..Z. |
+| `test_classes_have_26_letters` | Both languages have `len(classes) == 26` with A..Z. |
 | `test_missing_config_raises` | Loading from an empty directory yields an empty registry without crashing. |
 | `test_malformed_yaml_fails_clearly` | A `config.yaml` with missing required fields raises a clear `KeyError` or `ValueError`, not a cryptic stack trace. |
 
@@ -41,9 +40,7 @@ Framework: `pytest` with `pytest-cov`. Target coverage: 80%+ on `src/` excluding
 | `test_scale_invariance` | Multiplying all landmarks by 2.0 produces an identical normalised output. |
 | `test_wrist_at_origin` | After normalisation, the first three values of the output (the wrist) are all 0.0. |
 | `test_zero_scale_handled` | If wrist and middle MCP coincide (degenerate input), function returns finite values, not NaN/Inf. |
-| `test_two_hand_requires_both` | `build_two_hand_vector` returns `None` if only one hand was detected. |
-| `test_two_hand_dominant_ordering` | With both hands present, the dominant hand is concatenated first. |
-| `test_two_hand_output_shape` | Output shape is `(126,)` when both hands present. |
+
 
 ### 2.3 Smoother
 
@@ -69,10 +66,7 @@ Framework: `pytest` with `pytest-cov`. Target coverage: 80%+ on `src/` excluding
 ### 2.5 Feature dispatcher
 
 - `test_one_handed_language_dispatches_to_normalise_one_hand`
-- `test_two_handed_language_dispatches_to_two_hand_builder`
-- `test_unsupported_input_hands_raises_value_error`
 - `test_no_detections_returns_none_for_one_handed`
-- `test_partial_detection_returns_none_for_two_handed`
 
 ### 2.6 Test fixtures
 
@@ -180,8 +174,7 @@ After any retrain, run the saved test set through the new model. Compare per-cla
 Manual checklist; tick before any demo. Two people if possible — one signing, one observing.
 
 - [ ] Cold start: `docker-compose up` brings UI to ready state in under 60 seconds.
-- [ ] Language switch ASL → ISL → BSL works without restart; reference images update.
-- [ ] BSL prompt "show both hands" appears when only one hand is visible.
+- [ ] Language switch ASL → ISL works without restart; reference images update.
 - [ ] RED / AMBER / GREEN transitions feel responsive (no perceptible lag) when sign is held steady.
 - [ ] Sustained GREEN of ~1 s reliably advances to next letter.
 - [ ] Skip and Next buttons work; lesson can be exited cleanly.

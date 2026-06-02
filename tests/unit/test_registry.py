@@ -9,11 +9,11 @@ from src.registry import load_registry
 
 @pytest.fixture
 def lang_dir():
-    """Create a temp directory with three language configs."""
+    """Create a temp directory with two language configs."""
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
 
-        for code, hands in [("asl", 1), ("isl", 1), ("bsl", 2)]:
+        for code, hands in [("asl", 1), ("isl", 1)]:
             lang_dir = tmp / code
             lang_dir.mkdir(parents=True)
             cfg = {
@@ -31,9 +31,9 @@ def lang_dir():
         yield tmp
 
 
-def test_loads_three_languages(lang_dir):
+def test_loads_supported_languages(lang_dir):
     registry = load_registry(lang_dir)
-    assert set(registry.keys()) == {"asl", "isl", "bsl"}
+    assert set(registry.keys()) == {"asl", "isl"}
 
 
 def test_asl_isl_one_handed(lang_dir):
@@ -42,14 +42,9 @@ def test_asl_isl_one_handed(lang_dir):
     assert registry["isl"].input_hands == 1
 
 
-def test_bsl_two_handed(lang_dir):
-    registry = load_registry(lang_dir)
-    assert registry["bsl"].input_hands == 2
-
-
 def test_classes_have_26_letters(lang_dir):
     registry = load_registry(lang_dir)
-    for code in ["asl", "isl", "bsl"]:
+    for code in ["asl", "isl"]:
         assert len(registry[code].classes) == 26
         assert registry[code].classes == [chr(i) for i in range(65, 91)]
 

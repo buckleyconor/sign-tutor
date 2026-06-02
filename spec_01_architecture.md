@@ -15,7 +15,7 @@
 
 This document specifies the architecture for a multi-language sign language tutor lab running on the NVIDIA GB10 (DGX Spark / `promaxgb10`). The system uses computer vision and a hand-landmark classifier to recognise fingerspelled letters in real time, compare them against a reference, and provide visual feedback to a learner via a split-screen interface.
 
-The platform supports three sign languages from day one: American Sign Language (ASL), Irish Sign Language (ISL), and British Sign Language (BSL). The architecture is deliberately language-agnostic — adding additional sign languages requires only a new dataset and a per-language model, not a code rewrite.
+The platform supports two sign languages from day one: American Sign Language (ASL) and Irish Sign Language (ISL). Both use one-handed alphabets with identical input shapes (63 normalised landmarks → 26 classes). The architecture is deliberately language-agnostic — adding additional sign languages requires only a new dataset and a per-language model, not a code rewrite.
 
 The full ML stack is NVIDIA-centric: training in PyTorch on the GB10's Blackwell GPU, optimisation via TensorRT, and serving via Triton Inference Server. This makes the lab a credible enterprise reference implementation as well as a learning project.
 
@@ -24,7 +24,7 @@ The full ML stack is NVIDIA-centric: training in PyTorch on the GB10's Blackwell
 | Decision | Rationale |
 |---|---|
 | Hand tracking via MediaPipe Hands | CPU-only, fast, well-documented, runs natively on aarch64. Outputs 21 landmarks per hand, suitable for downstream classification. |
-| Per-language classifier model | ASL/ISL alphabets differ; BSL is two-handed. A single shared model would be a poor fit. Per-language models keep each one small, fast, and accurate. |
+| Per-language classifier model | ASL and ISL alphabets differ at the letter level. Per-language models keep each one small, fast, and accurate. Both share the same input shape (63 features) since they are both one-handed. |
 | PyTorch → ONNX → TensorRT pipeline | Standard NVIDIA inference path. Demonstrates real enterprise tooling rather than ad-hoc scripts. |
 | Triton Inference Server | Provides HTTP/gRPC endpoint, model versioning, dynamic batching, and clean separation between UI and ML. Identical interface scales from GB10 to H100. |
 | Gradio for UI | Python-native, fast to iterate, supports webcam input out of the box, easy to demo. Streamlit is an alternative but Gradio's webcam component is more mature. |
@@ -41,7 +41,7 @@ Sign language is a primary mode of communication for the Deaf and Hard-of-Hearin
 ### 2.2 In Scope (Module 1 + Module 2)
 
 - Real-time hand tracking via webcam input.
-- Recognition of static fingerspelled alphabet letters in ASL, ISL, and BSL.
+- Recognition of static fingerspelled alphabet letters in ASL and ISL.
 - Split-screen UI: live feed + reference image + traffic-light score.
 - Lesson progression: A→Z guided practice with feedback.
 - Per-language model training and TensorRT optimisation.
@@ -68,15 +68,12 @@ Sign language is a primary mode of communication for the Deaf and Hard-of-Hearin
 
 ## 3. Sign Language Domain Notes
 
-Sign languages are not universal. ASL, ISL, and BSL are mutually unintelligible languages with distinct grammars, vocabularies, and (critically for our purposes) fingerspelling alphabets.
+Sign languages are not universal. ASL and ISL are mutually unintelligible languages with distinct alphabets, even though they share the same one-handed fingerspelling approach.
 
 | Language | Hands | Notes | Implication for our system |
 |---|---|---|---|
 | **ASL** | One | American Sign Language. Best-documented, most datasets available. J and Z involve motion. | Single-hand model. 21 landmarks input. Well-trodden ground. |
-| **ISL** | One | Irish Sign Language. Officially recognised in Ireland (ISL Act 2017). Closer to ASL than to BSL but with letter-level differences. Limited public datasets. | Same input shape as ASL classifier. Custom dataset capture likely required. Strong local relevance for Cork-based CSC. |
-| **BSL** | Two | British Sign Language. Two-handed fingerspelling alphabet — fundamentally different from ASL/ISL. | Requires two-hand landmark input (42 landmarks, 126 features). Separate model architecture. |
-
-This is the most important architectural fact in the document. **The system must treat BSL as a structurally different model, not just a different label set.**
+| **ISL** | One | Irish Sign Language. Officially recognised in Ireland (ISL Act 2017). Closer to ASL than to other sign languages but with letter-level differences. Limited public datasets. | Same input shape as ASL classifier. Custom dataset capture likely required. Strong local relevance for Cork-based CSC. |
 
 ---
 
@@ -108,7 +105,7 @@ The system is organised into five layers:
 
 - **Capture layer** — webcam frames via OpenCV at 30 FPS.
 - **Perception layer** — MediaPipe Hands extracts 21 landmarks per detected hand.
-- **Feature layer** — landmarks normalised, optionally combined for two-handed input, packed into model input tensor.
+- **Feature layer** — landmarks normalised into model input tensor (63 floats for one-handed).
 - **Inference layer** — Triton serves the per-language TensorRT engine; gRPC/HTTP call returns class probabilities.
 - **Application layer** — Gradio UI, lesson controller, scoring, traffic-light feedback.
 
@@ -142,20 +139,15 @@ languages/
     model.onnx
     model.engine
     references/
-  bsl/
-    config.yaml          # input_hands: 2, classes: [A..Z]
-    model.onnx
-    model.engine
-    references/
 ```
 
 Adding a new sign language (e.g. Auslan, French Sign Language) requires only: a labelled dataset, a `config.yaml`, a trained model, and a reference image set. No pipeline or UI code changes.
 
-### 4.5 Why the BSL split matters
+### 4.5 ASL vs ISL
 
-ASL and ISL share the input shape (one hand, 63 features). Their classifiers are structurally identical — only weights and label sets differ. BSL is two-handed, meaning its input vector is 126 features and its first dense layer has different dimensions. The framework must therefore allow per-language model architectures, not just per-language weights.
+ASL and ISL share the input shape (one hand, 63 features). Their classifiers are structurally identical — only weights and label sets differ. This means the feature pipeline, normalisation, and model architecture are the same for both languages. The only per-language customisation is the model weights and label set.
 
-A pragmatic detail: BSL recognition also requires both hands to be visible. The feature builder must handle the "one hand visible, waiting for the other" case gracefully, ideally with a UI hint to the user.
+The shared input shape is a key design advantage: the UI, lesson controller, and scoring code work identically for both languages with zero conditional logic.
 
 ---
 
@@ -222,7 +214,7 @@ Raw frame-by-frame predictions jitter heavily. The UI uses a 15-frame (~0.5 s) r
 
 ### 6.4 Lesson flow
 
-1. User selects a language (ASL / ISL / BSL).
+1. User selects a language (ASL / ISL).
 2. User selects a lesson (Module 1: Alphabet; Module 2: Words).
 3. System presents target sign with reference image.
 4. User signs; traffic-light updates in real time.
@@ -236,7 +228,7 @@ Raw frame-by-frame predictions jitter heavily. The UI uses a 15-frame (~0.5 s) r
 | Risk | Severity | Mitigation |
 |---|---|---|
 | Limited public ISL alphabet datasets | High | Self-capture with webcam, augmented with rotations/lighting; document data provenance carefully. Engage with Irish Deaf Society for guidance and review. |
-| BSL two-handed alphabet adds complexity | Medium | Treat as second model architecture from day one; defer BSL to phase 2 of Module 1 if time-constrained. |
+
 | MediaPipe missed-detections under poor lighting | Medium | Document recommended demo lighting; UI to display "no hand detected" clearly; consider a fallback CV-CUDA pose model later. |
 | aarch64 wheel availability for niche dependencies | Low | Stay inside the NVIDIA PyTorch container; avoid exotic dependencies. Already-known workaround for `onnxruntime-gpu`. |
 | Cultural sensitivity / misrepresenting Deaf community | Medium | Frame the lab clearly as a learning aid, not an assistive product. Use reference imagery from authoritative sources. Acknowledge this is fingerspelling, not full sign language. |
@@ -254,12 +246,12 @@ Raw frame-by-frame predictions jitter heavily. The UI uses a 15-frame (~0.5 s) r
 | 2 | ASL classifier | Trained PyTorch ASL model, ONNX export, TensorRT engine, Triton serving, smoke test. |
 | 3 | UI + scoring | Gradio split-screen, traffic-light scoring, smoothing, ASL alphabet lesson playable end-to-end. |
 | 4 | ISL | ISL dataset captured, classifier trained, plugged in via language registry. Adding a second language proves the framework. |
-| 5 | BSL (two-handed) | Two-handed feature pipeline, BSL classifier, registry update. |
+| 4 | ISL (one-handed) | ISL dataset captured, classifier trained, plugged in via language registry. Adding a second language proves the framework. |
 | 6 | Module 2 + polish | Static-word lesson set per language. Demo-ready polish, latency tuning, documentation. |
 
 ---
 
 ## 9. Companion Specifications
 
-- **Spec 2 — Module 1 Detailed Build Spec**: end-to-end implementation steps for the ASL alphabet classifier, ISL extension, BSL two-handed extension, and integration with Triton + Gradio.
+- **Spec 2 — Module 1 Detailed Build Spec**: end-to-end implementation steps for the ASL alphabet classifier, ISL extension, and integration with Triton + Gradio.
 - **Spec 3 — Test & Validation Plan**: unit, integration, and acceptance tests; data quality checks; performance benchmarks.

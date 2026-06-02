@@ -7,7 +7,7 @@
 
 ## 1. Scope of this spec
 
-This document is the implementation plan for Module 1 — fingerspelled alphabet recognition for ASL, ISL, and BSL. It assumes the architecture in Spec 1. Each section below maps to a single, scoped deliverable. Every section ends with an exit criterion — something concrete you can demonstrate before moving on.
+This document is the implementation plan for Module 1 — fingerspelled alphabet recognition for ASL and ISL. It assumes the architecture in Spec 1. Each section below maps to a single, scoped deliverable. Every section ends with an exit criterion — something concrete you can demonstrate before moving on.
 
 ---
 
@@ -26,8 +26,7 @@ sign-tutor/
 │   │   └── models/             # populated by training
 │   ├── isl/
 │   │   └── ...
-│   └── bsl/
-│       └── ...
+
 ├── src/
 │   ├── capture/                # webcam + MediaPipe wrapper
 │   ├── features/               # landmark normalisation, packing
@@ -112,7 +111,7 @@ This is the keystone of the multi-language design. Every other component reads f
 # languages/asl/config.yaml
 name: "American Sign Language"
 code: "asl"
-input_hands: 1            # 1 for ASL/ISL, 2 for BSL
+input_hands: 1            # one-handed sign language
 classes: ["A","B","C","D","E","F","G","H","I","J","K","L","M",
           "N","O","P","Q","R","S","T","U","V","W","X","Y","Z"]
 triton_model_name: "asl_classifier"
@@ -158,7 +157,7 @@ def load_registry(root: Path = Path("languages")) -> dict[str, Language]:
     return registry
 ```
 
-> **Exit criterion:** `load_registry()` returns three Language objects (asl, isl, bsl) with the expected fields. Unit-tested.
+> **Exit criterion:** `load_registry()` returns two Language objects (asl, isl) with the expected fields. Unit-tested.
 
 ---
 
@@ -232,45 +231,19 @@ def normalise_one_hand(landmarks: np.ndarray) -> np.ndarray:
     return (centred / scale).astype(np.float32).flatten()
 ```
 
-### 6.3 Two-hand feature builder (BSL)
-
-BSL fingerspelling is two-handed and asymmetric — there is a "dominant" and a "subordinate" hand. We use MediaPipe's handedness label to consistently order them.
-
-```python
-# src/features/two_hand.py
-import numpy as np
-from .normalise import normalise_one_hand
-
-def build_two_hand_vector(detections, dominant: str = "Right") -> np.ndarray | None:
-    """detections: list of (handedness, (21,3)) from HandTracker.
-       Returns (126,) vector or None if both hands not present."""
-    by_hand = {h: lm for h, lm in detections}
-    if "Left" not in by_hand or "Right" not in by_hand:
-        return None
-    sub = "Left" if dominant == "Right" else "Right"
-    dom_vec = normalise_one_hand(by_hand[dominant])
-    sub_vec = normalise_one_hand(by_hand[sub])
-    return np.concatenate([dom_vec, sub_vec])
-```
-
-### 6.4 Feature dispatcher
+### 6.3 Feature dispatcher
 
 ```python
 # src/features/__init__.py
 import numpy as np
 from src.registry import Language
 from .normalise import normalise_one_hand
-from .two_hand import build_two_hand_vector
 
 def build_feature_vector(language: Language, detections) -> np.ndarray | None:
-    if language.input_hands == 1:
-        if not detections:
-            return None
-        # Take whichever hand was detected (handedness ignored for ASL/ISL)
-        return normalise_one_hand(detections[0][1])
-    elif language.input_hands == 2:
-        return build_two_hand_vector(detections)
-    raise ValueError(f"Unsupported input_hands: {language.input_hands}")
+    if not detections:
+        return None
+    # One-handed languages (ASL/ISL): take whichever hand was detected
+    return normalise_one_hand(detections[0][1])
 ```
 
 > **Exit criterion:** feature builder returns the right shape per language; unit tests cover translation/scale invariance.
@@ -281,7 +254,7 @@ def build_feature_vector(language: Language, detections) -> np.ndarray | None:
 
 ### 7.1 Dataset extraction
 
-Source images go through MediaPipe to produce CSV rows of `(label, 63 floats)` for one-handed languages or `(label, 126 floats)` for BSL. Done once, then reused across many training runs.
+Source images go through MediaPipe to produce CSV rows of `(label, 63 floats)`. Done once, then reused across many training runs.
 
 ```bash
 # training/extract_landmarks.py (skeleton)
@@ -308,25 +281,7 @@ class OneHandClassifier(nn.Module):
         return self.net(x)
 ```
 
-### 7.3 Classifier (two-handed)
-
-```python
-# training/model_two_hand.py
-import torch.nn as nn
-
-class TwoHandClassifier(nn.Module):
-    def __init__(self, num_classes: int = 26):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(126, 256), nn.ReLU(), nn.Dropout(0.3),
-            nn.Linear(256, 128), nn.ReLU(), nn.Dropout(0.2),
-            nn.Linear(128, num_classes),
-        )
-    def forward(self, x):
-        return self.net(x)
-```
-
-### 7.4 Training script outline
+### 7.3 Training script outline
 
 - Load CSV, split 80/10/10 train/val/test (stratified by class).
 - Train for ~50 epochs, batch size 256, Adam lr=1e-3, cross-entropy loss.
@@ -338,7 +293,7 @@ class TwoHandClassifier(nn.Module):
 
 ```python
 # training/export_onnx.py (excerpt)
-dummy = torch.randn(1, 63)  # or (1, 126) for BSL
+dummy = torch.randn(1, 63)
 torch.onnx.export(
     model, dummy, "model.onnx",
     input_names=["input"], output_names=["output"],
@@ -378,9 +333,7 @@ triton_repo/
 ├── isl_classifier/
 │   ├── config.pbtxt
 │   └── 1/model.plan
-└── bsl_classifier/
-    ├── config.pbtxt
-    └── 1/model.plan
+
 ```
 
 ### 8.2 config.pbtxt (one-handed)
@@ -394,18 +347,7 @@ output [ { name: "output", data_type: TYPE_FP32, dims: [26] } ]
 instance_group [ { count: 1, kind: KIND_GPU } ]
 ```
 
-### 8.3 config.pbtxt (BSL)
-
-```
-name: "bsl_classifier"
-platform: "tensorrt_plan"
-max_batch_size: 64
-input  [ { name: "input",  data_type: TYPE_FP32, dims: [126] } ]
-output [ { name: "output", data_type: TYPE_FP32, dims: [26] } ]
-instance_group [ { count: 1, kind: KIND_GPU } ]
-```
-
-### 8.4 Triton client wrapper
+### 8.3 Triton client wrapper
 
 ```python
 # src/inference/triton_client.py
@@ -571,31 +513,15 @@ def render_light(light: Light) -> str:
 
 Adding ISL is the moment of truth for the framework. If we built the registry correctly, this is a data-only task.
 
-- Capture ~200 images per letter using webcam (or use a small open ISL dataset if one is available).
+- Use the ISL-HS dataset (DCU) or capture ~200 images per letter using webcam.
 - Run `extract_landmarks.py` to produce `languages/isl/landmarks.csv`.
-- Train a `OneHandClassifier` with the same script — pass `--lang isl`.
+- Train a `OneHandClassifier` with the same script.
 - Export to ONNX, build TensorRT engine, drop into `triton_repo/isl_classifier/1/model.plan`.
 - Add `languages/isl/config.yaml` and reference images.
 - Restart Triton (or rely on poll mode) to load the new model.
 - ISL appears in the language dropdown automatically — no UI code change.
 
 > **Exit criterion:** switching the language dropdown to ISL works; sign 'A' in ISL; system gives correct GREEN.
-
----
-
-## 12. Adding BSL (two-handed extension)
-
-BSL is the other moment of truth — does the two-hand path work?
-
-- Capture two-handed BSL alphabet samples with both hands visible.
-- Use `--hands 2` in `extract_landmarks.py` to produce 126-feature CSV.
-- Train `TwoHandClassifier`.
-- Export ONNX with input shape `(1, 126)`, build engine.
-- Drop into `triton_repo/bsl_classifier/1/model.plan` with the BSL `config.pbtxt`.
-- Add `languages/bsl/config.yaml` with `input_hands: 2`.
-- Verify UI handles "one hand visible, waiting for second" state with a hint.
-
-> **Exit criterion:** BSL selection works; system requires both hands visible; correct GREEN on a known sign.
 
 ---
 
@@ -609,7 +535,5 @@ hold_seconds_for_complete: 1.0
 smoothing_window_frames: 15
 
 # Per-language overrides allowed:
-overrides:
-  bsl:
-    green_min_confidence: 0.75   # slightly more forgiving while two-hand model matures
+
 ```

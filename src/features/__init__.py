@@ -1,16 +1,21 @@
+"""Feature builder — normalises hand landmarks into a model input vector."""
+
 import numpy as np
+
 from src.registry import Language
 from .normalise import normalise_one_hand
-from .two_hand import build_two_hand_vector
 
 
 def build_feature_vector(language: Language, detections) -> np.ndarray | None:
-    """Dispatch to the correct feature builder based on language config."""
-    if language.input_hands == 1:
-        if not detections:
-            return None
-        # Take whichever hand was detected (handedness ignored for ASL/ISL)
-        return normalise_one_hand(detections[0][1])
-    elif language.input_hands == 2:
-        return build_two_hand_vector(detections)
-    raise ValueError(f"Unsupported input_hands: {language.input_hands}")
+    """Build the model input vector for a language from hand detections.
+
+    Args:
+        language: A Language dataclass from the registry.
+        detections: List of (handedness, landmarks_21x3) from HandTracker.
+
+    Returns:
+        A (63,) normalised landmark vector, or None if no hand was detected.
+    """
+    if not detections:
+        return None
+    return normalise_one_hand(detections[0][1])

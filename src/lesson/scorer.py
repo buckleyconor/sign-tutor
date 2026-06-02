@@ -19,7 +19,7 @@ class QualityScorer:
         target_conf = conf if pred_idx == self._target else 0.0
         self._ema += _EMA_ALPHA * (target_conf - self._ema)
         now = time.monotonic()
-        if pred_idx == self._target and conf >= self._green_min:
+        if pred_idx == self._target and self._ema >= self._green_min:
             if self._green_since is None:
                 self._green_since = now
         else:

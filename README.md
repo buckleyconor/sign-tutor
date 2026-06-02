@@ -5,8 +5,7 @@ Multi-language sign language fingerspelling tutor for the NVIDIA GB10 (DGX Spark
 ## Languages
 
 - **ASL** (American Sign Language) — one-handed alphabet
-- **ISL** (Irish Sign Language) — one-handed alphabet  
-- **BSL** (British Sign Language) — two-handed alphabet
+- **ISL** (Irish Sign Language) — one-handed alphabet
 
 ## Architecture
 

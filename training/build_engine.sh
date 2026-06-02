@@ -10,7 +10,7 @@ set -euo pipefail
 MODELS_DIR=${1:-.}
 HANDS=${2:-1}
 
-LANG=$(basename "$MODELS_DIR")                          # asl | isl | bsl
+LANG=$(basename "$MODELS_DIR")                          # asl | isl
 TRITON_DIR="${TRITON_REPO:-/triton_repo}/${LANG}_classifier/1"
 
 echo "Deploying ${LANG} ONNX model to Triton repo..."

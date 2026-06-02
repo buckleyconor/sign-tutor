@@ -1,16 +1,14 @@
-"""Train one-handed or two-handed classifier from a landmark CSV.
+"""Train a sign language classifier from a landmark CSV.
 
 CSV format (no header):
-  label, source, frame_id, feat_0, feat_1, ..., feat_N
+  label, source, frame_id, feat_0, feat_1, ..., feat_62
 
 Example:
   A, kaggle, img001, 0.012, -0.034, ...
-  B, self_capture, frame_12, -0.045, 0.078, ...
 
 Usage:
   python training/train_classifier.py \
     --dataset datasets/asl/landmarks.csv \
-    --hands 1 \
     --epochs 30 \
     --lr 3e-4 \
     --batch-size 64 \
@@ -27,7 +25,6 @@ from torch.utils.data import DataLoader, Dataset
 import numpy as np
 
 from training.model_one_hand import OneHandClassifier
-from training.model_two_hand import TwoHandClassifier
 from training.augment import augment_one_hand
 
 
@@ -42,7 +39,7 @@ LABEL_TO_IDX = {l: i for i, l in enumerate(LETTERS)}
 class LandmarkDataset(Dataset):
     """Read pre-extracted landmark CSVs."""
 
-    def __init__(self, csv_path: str, hands: int = 1, transform=None):
+    def __init__(self, csv_path: str, transform=None):
         import pandas as pd
 
         df = pd.read_csv(csv_path, header=None, dtype={0: str, 1: str, 2: str})
@@ -51,7 +48,6 @@ class LandmarkDataset(Dataset):
         features = df.iloc[:, n_meta:].astype(np.float32).values
         self.labels = torch.from_numpy(labels).long()
         self.features = torch.from_numpy(features)
-        self.hands = hands
         self.transform = transform
         self.n_features = self.features.shape[1]
 
@@ -71,19 +67,13 @@ class LandmarkDataset(Dataset):
 # ---------------------------------------------------------------------------
 
 def make_augmentation(transform_name: str = "landmark_noise"):
-    """Return a callable(x: np.ndarray, hands: int) -> np.ndarray."""
+    """Return a callable(x: np.ndarray) -> np.ndarray."""
     rng = np.random.default_rng()
 
-    def apply(x: np.ndarray, hands: int):
+    def apply(x: np.ndarray):
         if transform_name == "none":
             return x.astype(np.float32)
-        if hands == 1:
-            return augment_one_hand(x, rng)
-        # Two-hand: augment each sub-vector independently
-        x1, x2 = x[:63], x[63:]
-        x1 = augment_one_hand(x1, rng)
-        x2 = augment_one_hand(x2, rng)
-        return np.concatenate([x1, x2])
+        return augment_one_hand(x, rng)
 
     return apply
 
@@ -92,12 +82,8 @@ def make_augmentation(transform_name: str = "landmark_noise"):
 # Training helpers
 # ---------------------------------------------------------------------------
 
-def build_model(hands: int, num_classes: int = 26):
-    if hands == 1:
-        return OneHandClassifier(num_classes)
-    if hands == 2:
-        return TwoHandClassifier(num_classes)
-    raise ValueError(f"hands={hands} unsupported")
+def build_model(num_classes: int = 26):
+    return OneHandClassifier(num_classes)
 
 
 def train_epoch(model, loader, criterion, optimizer, device):
@@ -138,8 +124,6 @@ def main():
     parser = argparse.ArgumentParser(description="Train sign-language classifier")
     parser.add_argument("--dataset", type=str, required=True,
                         help="Path to landmark CSV")
-    parser.add_argument("--hands", type=int, choices=[1, 2], default=1,
-                        help="Number of input hands")
     parser.add_argument("--num-classes", type=int, default=26)
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--batch-size", type=int, default=64)
@@ -167,8 +151,8 @@ def main():
         print(f"  GPU: {torch.cuda.get_device_name(0)}")
 
     # Dataset + split
-    full_ds = LandmarkDataset(args.dataset, hands=args.hands)
-    print(f"Loaded {len(full_ds)} samples, {args.hands}-hand, "
+    full_ds = LandmarkDataset(args.dataset)
+    print(f"Loaded {len(full_ds)} samples, "
           f"{full_ds.n_features} features")
 
     n_total = len(full_ds)
@@ -191,7 +175,7 @@ def main():
                             pin_memory=True)
 
     # Model + optimiser
-    model = build_model(args.hands, args.num_classes).to(device)
+    model = build_model(args.num_classes).to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=args.lr, weight_decay=args.weight_decay,

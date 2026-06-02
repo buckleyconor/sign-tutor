@@ -19,7 +19,7 @@ This spec covers, per language: where the data comes from, how to obtain it, how
 |---|---|---|---|
 | ASL | Kaggle "ASL Alphabet" (Akash Nagaraj) | None needed for Module 1 | ~1 hour download + extraction |
 | ISL | DCU **ISL-HS** (Oliveira et al., 2017) | Self-capture for diversity | ~half a day |
-| BSL | Self-capture (no clean public alphabet dataset) | Augmentation | ~2 days |
+
 
 **Key insight:** because we use MediaPipe to extract 21-landmark vectors and **discard the original pixels**, the size of the source images stops mattering. A 200×200 ASL image and a 1080p self-capture both end up as the same 63 floats. This makes mixing data sources practical and dramatically reduces the per-language data burden.
 
@@ -114,44 +114,13 @@ Our landmark-based MLP should land in the 92–97% range on a held-out split. Ex
 
 ---
 
-## 5. BSL — what's actually available
 
-### 5.1 The honest picture
-
-There is **no clean, freely-downloadable BSL alphabet dataset** equivalent to ISL-HS or the ASL Kaggle set. The major BSL datasets are:
-
-**BOBSL (Oxford VGG / BBC)**
-- URL: https://www.robots.ox.ac.uk/~vgg/data/bobsl/
-- ~1,400 hours of BSL-interpreted BBC broadcast footage
-- Continuous signing, not isolated alphabet — overkill and wrong shape for our use case
-- Requires a BBC R&D Terms of Use agreement and personal password approval
-- Listed for completeness; not what we need
-
-**FS23K (Oxford VGG)**
-- arXiv: https://arxiv.org/abs/2603.19523
-- Released 2026 by Chan, Kwon, and Zisserman
-- 23,074 fingerspelling instances with letter-level annotations, derived from BOBSL
-- This is fingerspelling-specific, but **continuous** — letter sequences, not isolated letters with clean labels — and inherits BOBSL's access requirements
-- Conceivably useful for Module 3 (sequence recognition), not Module 1
-
-**BSL alphabet reference charts** (free, useful for reference imagery in the UI):
-- British Deaf Association: https://bda.org.uk/wp-content/uploads/2023/04/BSL-Fingerspelling-Chart.pdf
-- Sign Language Week: https://signlanguageweek.org.uk/wp-content/uploads/2023/02/SLW-BSL-Fingerspelling-Chart-2023.pdf
-- british-sign.co.uk: https://www.british-sign.co.uk/fingerspelling-alphabet-charts/ (right- and left-handed versions)
-
-These are reference images, not training data.
-
-### 5.2 Plan for BSL
-
-**Self-capture is the realistic path.** The two-handed nature of BSL also means existing single-hand datasets are useless for it anyway. A capture protocol for self-collection is in Section 6.
-
-The good news: BSL's two-handed alphabet is more visually distinctive per letter than ASL's, and a 126-feature input gives the model more to work with. Modest dataset sizes (200–400 samples per letter) should suffice.
 
 ---
 
 ## 6. Self-capture protocol
 
-A single, reusable protocol covers ISL top-up and the entire BSL dataset. Designed to be runnable solo with a webcam and a few minutes per letter.
+A single, reusable protocol covers ISL top-up data capture. Designed to be runnable solo with a webcam and a few minutes per letter.
 
 ### 6.1 Goals of the protocol
 
@@ -162,7 +131,7 @@ A single, reusable protocol covers ISL top-up and the entire BSL dataset. Design
 ### 6.2 Per-letter target
 
 - 200 frames per letter for ISL top-up (mixing with ISL-HS).
-- 400 frames per letter for BSL (this is the primary source).
+
 
 ### 6.3 Capture conditions (cycle through during the session)
 
@@ -249,7 +218,7 @@ A single signer producing one full pass of the alphabet across all conditions ta
 
 ### 6.6 Recommended signers
 
-Capture from at least three different people if possible — a single signer overfits the model to that one person's hand geometry. For BSL specifically, prioritise getting at least one signer who is comfortable with the two-handed alphabet, even if it's just from a YouTube tutorial.
+Capture from at least three different people if possible — a single signer overfits the model to that one person's hand geometry.
 
 > **Cultural note:** for any data captured from members of the Deaf community, get explicit consent for the lab use, and offer to share the resulting model with them. This is both the right thing to do and meaningfully improves credibility if the demo is ever shown externally.
 
@@ -267,7 +236,7 @@ A,isl_hs,signer3_take2,0.0,0.0,0.0,0.123,...
 A,self_capture,condition1,0.0,0.0,0.0,0.119,...
 ```
 
-Where `N = 62` for one-handed (ASL/ISL) and `N = 125` for two-handed (BSL).
+Where `N = 62` for one-handed (ASL/ISL).
 
 ### 7.2 Extraction script
 
@@ -279,7 +248,7 @@ import cv2
 import numpy as np
 from src.capture.hands import HandTracker
 from src.features.normalise import normalise_one_hand
-from src.features.two_hand import build_two_hand_vector
+
 
 def extract_from_image_dir(src_dir: Path, hands: int, source_tag: str,
                            out_csv: Path):
@@ -303,11 +272,6 @@ def extract_from_image_dir(src_dir: Path, hands: int, source_tag: str,
                         skipped += 1
                         continue
                     feat = normalise_one_hand(detections[0][1])
-                else:
-                    feat = build_two_hand_vector(detections)
-                    if feat is None:
-                        skipped += 1
-                        continue
                 writer.writerow([letter, source_tag, img_path.stem,
                                  *feat.tolist()])
                 written += 1
@@ -376,7 +340,7 @@ Apply at training time, not pre-computed (avoids dataset bloat):
 
 ### 8.2 What NOT to augment
 
-- **Don't mirror BSL data.** Two-handed signs depend on dominant/subordinate ordering — mirroring breaks the semantics.
+
 - **Don't translate post-normalisation.** Normalisation already places the wrist at origin; adding translation would break that invariance.
 - **Don't add per-finger jitter independent of the hand structure.** It produces unrealistic hand poses.
 
@@ -412,7 +376,7 @@ These are simple pandas checks. Wire them into the start of the training script 
 |---|---|---|
 | Per-class sample count | min/max ratio ≤ 0.5 | Capture more for under-represented letters |
 | NaN / Inf values | zero | Re-extract; debug normalisation |
-| Vector length | all rows == expected dim | Mixing of one-hand and two-hand data — fix source tags |
+| Vector length | all rows == expected dim | Ensure consistent feature dimension across all sources |
 | Duplicate rows | < 1% | Source has duplicate frames; deduplicate |
 | Source diversity | ≥ 2 sources for ISL, ≥ 3 sessions for self-capture | Add more sources |
 | MediaPipe detection rate per letter | ≥ 80% | Letter is hard to detect; prioritise top-up |
@@ -484,14 +448,7 @@ Tear-out checklist for tracking progress.
 - [ ] J/X/Z dynamic letters handled (decision: skip or capture as static)
 - [ ] Attribution recorded for any external contributors
 
-### BSL
-- [ ] Decision made on dynamic letters (H, J — both involve motion in BSL)
-- [ ] Self-capture session 1 completed
-- [ ] Self-capture session 2 completed (different signer if possible)
-- [ ] Self-capture session 3 completed (additional conditions)
-- [ ] Quality check passes
-- [ ] Per-letter detection rate ≥ 80% (lower bar — two hands harder to track)
-- [ ] Reference imagery sourced from BDA chart (under their licensing)
+
 
 ---
 
@@ -575,7 +532,7 @@ These are the operations to actively avoid — they will quietly degrade your mo
 | Elastic transforms / grid distortion | Distorts the hand structure itself; the label no longer describes what's in the image. |
 | Heavy rotation (>30°) | A hand at 45° is a different sign in some cases (W vs M, etc.). Stay within ±15°. |
 | Colour shifts on ISL-HS | Dataset is greyscale and background-removed. Colour augmentation is a no-op or worse. |
-| Horizontal flip on BSL data | Two-handed signs depend on dominant/subordinate ordering — flipping breaks the semantics. |
+
 | Vertical flip (any language) | No real-world signing happens upside down. Pure noise. |
 | Random crop tight enough to clip the hand | Cropped fingers = lost label information. |
 | Heavy blur | MediaPipe needs to be able to find the hand. Blur it past recognition and you just lose data. |
@@ -612,6 +569,4 @@ For ISL on the GB10:
 
 ## 13. Honest summary
 
-ASL is essentially solved — Kaggle dataset gets you to a working model in a day. ISL is well-supported by the DCU dataset for a baseline, but live demo quality will require self-capture top-up and DALI-based augmentation. BSL is the hard one and is best treated as primarily a self-capture exercise, with the public continuous-signing datasets (BOBSL/FS23K) reserved for any future Module 3 work.
-
-If time pressure forces a cut, **drop BSL from Module 1 phase 1**, ship ASL + ISL solidly, then return for BSL once the framework is proven on two languages. The architecture supports this — that's the whole point of the language registry.
+ASL is essentially solved — Kaggle dataset gets you to a working model in a day. ISL is well-supported by the DCU dataset for a baseline, but live demo quality will require self-capture top-up and DALI-based augmentation.
