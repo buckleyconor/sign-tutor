@@ -159,8 +159,8 @@ The shared input shape is a key design advantage: the UI, lesson controller, and
 |---|---|---|
 | MediaPipe Hands | ✅ OK | CPU-based, runs natively on aarch64. Pip install on Ubuntu 24.04 works. |
 | PyTorch (NVIDIA container) | ✅ OK | Use `nvcr.io/nvidia/pytorch:25.xx-py3` — Blackwell-optimised, includes Triton 3.5 and FlashAttention 2. Do not use generic pip wheels. |
-| TensorRT | ✅ OK | Native ARM64 support on DGX Spark. `trtexec` available. CUDA 13 / sm_121 target architecture. |
-| Triton Inference Server | ✅ OK | ARM64 builds available. DGX Spark explicitly supported in release notes. |
+| TensorRT | ✅ OK | Native ARM64 support on DGX Spark. `trtexec` available. CUDA 13 / sm_121 target architecture. **Requires `tritonserver:26.04-py3` or later** — TRT 10.9 (25.03) has no kernel implementations for sm_121 and fails at engine build time. |
+| Triton Inference Server | ✅ OK | ARM64 builds available. Use `26.04-py3` (TRT 10.16.01) — confirmed working on GB10. |
 | ONNX Runtime GPU | ⚠️ Workaround | PyPI does not host aarch64 wheels. Use Ultralytics-hosted wheel: `onnxruntime_gpu-1.24.0-cp312-cp312-linux_aarch64.whl`. Only needed if doing ONNX-based inference outside Triton. |
 | TAO Toolkit | Optional | Supports ARM64 since v6.0.0. Useful for image-based Module 2 experiments. For Module 1 (landmarks-only), direct PyTorch is simpler. |
 | OpenCV / Gradio | ✅ OK | Pure Python, no aarch64 issues. |
@@ -169,7 +169,7 @@ The shared input shape is a key design advantage: the UI, lesson controller, and
 
 The full system runs in two Docker containers on the GB10:
 
-- **triton-server**: `nvcr.io/nvidia/tritonserver:25.xx-py3` — hosts the per-language TensorRT engines on port 8000 (HTTP) and 8001 (gRPC).
+- **triton-server**: `nvcr.io/nvidia/tritonserver:26.04-py3` — hosts the per-language TensorRT engines on port 8000 (HTTP) and 8001 (gRPC). Must be 26.04+ for GB10 engine compilation (TRT 10.16).
 - **tutor-app**: built from `nvcr.io/nvidia/pytorch:25.xx-py3` — runs MediaPipe, the Gradio UI, and the lesson controller; communicates with Triton over the local Docker network.
 
 Training runs ad-hoc inside the pytorch container. Trained engines are copied into the Triton model repository and the server is signalled to reload.

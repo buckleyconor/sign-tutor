@@ -1,6 +1,6 @@
 services:
   triton:
-    image: nvcr.io/nvidia/tritonserver:25.03-py3
+    image: nvcr.io/nvidia/tritonserver:26.04-py3
     runtime: nvidia
     ports:
       - "8010:8000"

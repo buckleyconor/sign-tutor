@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build a TensorRT FP16 engine from an ONNX model and deploy it to the
+# Build a TensorRT FP32 engine from an ONNX model and deploy it to the
 # Triton model repository.
+#
+# NOTE: FP16 was tested and produces incorrect predictions on this model.
+# The MLP is too small (63→128→64→26) for FP16 rounding to be safe — logits
+# shift enough to change the top-1 class on ~80% of inputs. FP32 matches
+# PyTorch exactly and has negligible latency difference at this model size.
 #
 # Usage: build_engine.sh <models_dir>
 #        e.g. build_engine.sh languages/asl
@@ -35,13 +40,12 @@ echo "  Deploy: ${TRITON_DIR}/model.plan"
 mkdir -p "${MODELS_DIR}"
 mkdir -p "${TRITON_DIR}"
 
-# Build the TensorRT FP16 engine with dynamic batch shapes.
+# Build the TensorRT FP32 engine with dynamic batch shapes.
 # The engine encodes the architecture and precision; Triton handles
 # dynamic batching via the config.pbtxt dynamic_batching directive.
 trtexec \
     --onnx="${ONNX_PATH}" \
     --saveEngine="${MODELS_DIR}/model.plan" \
-    --fp16 \
     --minShapes=input:1x63 \
     --optShapes=input:32x63 \
     --maxShapes=input:64x63 \

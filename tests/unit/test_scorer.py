@@ -35,7 +35,7 @@ def test_correct_high_conf_reaches_full_green():
 
 def test_completion_after_hold():
     s = _scorer(hold_seconds=1.0)
-    # update() calls monotonic() once each; completed property calls it once more
+    s._ema = 1.0  # bypass EMA warm-up; test the hold timer only
     with patch("time.monotonic", side_effect=[0.0, 1.0, 1.0]):
         s.update(TARGET, 1.0)   # t=0 — starts green timer
         s.update(TARGET, 1.0)   # t=1

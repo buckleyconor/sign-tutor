@@ -64,7 +64,7 @@ Two containers, orchestrated by `docker-compose`:
 # docker-compose.yml (excerpt)
 services:
   triton:
-    image: nvcr.io/nvidia/tritonserver:25.03-py3
+    image: nvcr.io/nvidia/tritonserver:26.04-py3  # 26.04+ required for GB10/sm_121 TRT engine build
     runtime: nvidia
     ports: ["8000:8000", "8001:8001", "8002:8002"]
     volumes: ["./triton_repo:/models"]
@@ -315,6 +315,8 @@ trtexec --onnx=model.onnx \
 ```
 
 > We build the engine on the GB10 itself — TensorRT engines are tied to GPU architecture, and the GB10 is sm_121 (Blackwell, low-power variant). Engines built on an H100 won't run here, and vice versa. This is normal; document it for future you.
+>
+> **Container version matters:** TRT 10.9 (tritonserver:25.03) has no kernel implementations for sm_121 and fails with `Could not find any implementation for node`. Use `tritonserver:26.04-py3` (TRT 10.16.01) or later. Rollback: revert the image tag in docker-compose.yml and switch config.pbtxt to `platform: "onnxruntime_onnx"` with the `.onnx` file.
 
 > **Exit criterion:** per-language `model.plan` file exists; `trtexec` validation passes; standalone Python harness can run inference on it.
 

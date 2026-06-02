@@ -100,6 +100,7 @@ class LessonController:
             ),
             "completed": self._scorer.completed,
             "confidence": smooth_conf,
+            "scorer_quality": self._scorer.quality,
         }
 
     def get_reference_image(self, lang_code: str, idx: int) -> Optional[str]:

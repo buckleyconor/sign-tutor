@@ -105,7 +105,7 @@ def build_app():
                 return 0.0, gr.update(), "", idx, already_passed
             try:
                 result = controller.process_frame(frame, lang_code)
-                quality = result.get("confidence", 0.0)
+                quality = result.get("scorer_quality", 0.0)
                 completed = already_passed or result.get("completed", False)
                 status_text = (
                     "✅ PASSED! Proceed to the next letter."
